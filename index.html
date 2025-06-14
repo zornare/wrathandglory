@@ -108,11 +108,11 @@
             max-width: 600px;
         }
         .threat-profile-box {
-            background-color: #1C2833; /* Darker Slate */
-            border: 1px solid #273746; 
+            background-color: #1a202c; /* Very Dark Slate */
+            border: 1px solid #2d3748; 
         }
         .stat-value-box {
-            background-color: #273746; /* Slightly lighter Slate */
+            background-color: #2d3748; /* Slightly lighter Slate */
             border-radius: 0.25rem;
         }
     </style>
@@ -127,7 +127,7 @@
 
         <!-- Control Buttons -->
         <div class="flex flex-wrap justify-center gap-4 my-6">
-            <button id="import-data-btn" class="bg-red-800 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow-md title-font">Import Data</button>
+            <button id="import-data-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg shadow-md title-font">Import Data</button>
             <button id="save-button" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-lg shadow-md title-font">Save Progress</button>
             <button id="load-button" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg shadow-md title-font">Load Progress</button>
             <input type="file" id="file-input" class="hidden" accept=".json">
@@ -188,27 +188,31 @@
 
             allSetpieces.forEach(setpiece => {
                 const neutralizedThreats = [];
-                setpiece.threat_profiles.forEach(profile => {
-                    const woundCheckboxes = document.querySelectorAll(`input[id^="${profile.id}-w-"]`);
-                    const allWoundsChecked = woundCheckboxes.length > 0 && Array.from(woundCheckboxes).every(box => box.checked);
-                    if (allWoundsChecked) {
-                        neutralizedThreats.push(profile.name);
-                    }
-                });
+                if (setpiece.threat_profiles) {
+                    setpiece.threat_profiles.forEach(profile => {
+                        const woundCheckboxes = document.querySelectorAll(`input[id^="${profile.id}-w-"]`);
+                        const allWoundsChecked = woundCheckboxes.length > 0 && Array.from(woundCheckboxes).every(box => box.checked);
+                        if (allWoundsChecked) {
+                            neutralizedThreats.push(profile.name);
+                        }
+                    });
+                }
 
                 const foundClues = [];
-                setpiece.clues.forEach((clue, index) => {
-                    const checkbox = document.getElementById(`clue-${setpiece.id}-${index}`);
-                    if (checkbox && checkbox.checked) {
-                        foundClues.push(`<li><strong>${clue.title}:</strong> ${clue.clue}</li>`);
-                    }
-                });
-
+                if (setpiece.clues) {
+                    setpiece.clues.forEach((clue, index) => {
+                        const checkbox = document.getElementById(`clue-${setpiece.id}-${index}`);
+                        if (checkbox && checkbox.checked) {
+                            foundClues.push(`<li><strong>${clue.title}:</strong> ${clue.clue}</li>`);
+                        }
+                    });
+                }
+                
                 const emergentNotes = [];
                 document.querySelectorAll(`#${setpiece.id} .emergent-clue-item`).forEach(item => {
                     const checkbox = item.querySelector('.checkbox');
                     const contentDiv = item.querySelector('.editable-clue');
-                     if (checkbox && contentDiv && checkbox.checked && contentDiv.innerHTML.trim() !== '') {
+                     if (checkbox && contentDiv && checkbox.checked && contentDiv.innerHTML.trim() !== '' && contentDiv.innerHTML.trim().toLowerCase() !== '<br>') {
                         emergentNotes.push(`<li><strong>Note:</strong> ${contentDiv.innerHTML}</li>`);
                     }
                 });
@@ -434,10 +438,6 @@
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         }
 
-        const saveButton = document.getElementById('save-button');
-        const loadButton = document.getElementById('load-button');
-        const fileInput = document.getElementById('file-input');
-
         function collectData() {
             const data = {
                 campaign_data: Object.values(window.campaignData),
@@ -479,7 +479,7 @@
                         if (content && content.trim() !== '' && content.trim().toLowerCase() !== '<br>') {
                             const checkId = id.replace('content','check');
                             const parts = id.split('-');
-                            const setpieceId = parts[3];
+                            const setpieceId = parts.slice(3, -1).join('-');
                             if(window.campaignData[setpieceId]){
                                 addEmergentClue(setpieceId, checkId, id);
                             }
@@ -507,15 +507,14 @@
             }, 0);
         }
         
+        // --- EVENT LISTENERS ---
         document.body.addEventListener('click', function(e) {
             const target = e.target;
-            if (target && target.classList.contains('add-clue-btn')) {
-                addEmergentClue(target.dataset.setpieceId);
+            if (target && target.closest('.add-clue-btn')) {
+                addEmergentClue(target.closest('.add-clue-btn').dataset.setpieceId);
             }
-            else if (target && target.classList.contains('tab-button')) {
-                switchTab(target.dataset.tab);
-            } else if (target.matches('#import-data-btn, #save-button, #load-button, #modal-cancel, #modal-import')) {
-                // Handled by other listeners
+            else if (target && target.closest('.tab-button')) {
+                switchTab(target.closest('.tab-button').dataset.tab);
             }
         });
         
@@ -530,7 +529,34 @@
             }
         });
         
-        saveButton.addEventListener('click', () => {
+        document.getElementById('import-data-btn').addEventListener('click', showModal);
+        document.getElementById('modal-cancel').addEventListener('click', hideModal);
+        document.getElementById('modal-import').addEventListener('click', () => {
+            try {
+                const data = JSON.parse(jsonInput.value);
+                if (data.campaign_data && data.progress) {
+                    alert("This appears to be a save file. Please use the 'Load Progress' button instead.");
+                    return;
+                }
+                if (!data.type || !data.id || !data.title) {
+                    alert(`Error: Invalid JSON structure for new data. Missing 'type', 'id', or 'title'.`);
+                    return;
+                }
+                window.campaignData[data.id] = data;
+                if (data.type === 'overview') {
+                    createOverviewTab(data);
+                } else if (data.type === 'setpiece') {
+                    createSetpieceTab(data);
+                }
+                hideModal();
+                updateProgressTab();
+                switchTab(data.id);
+            } catch (error) {
+                console.error("JSON Parse Error:", error);
+                alert("Invalid JSON data. Please check the format and try again.");
+            }
+        });
+        document.getElementById('save-button').addEventListener('click', () => {
             const data = collectData();
             const dataString = JSON.stringify(data, null, 2);
             const blob = new Blob([dataString], {type: 'application/json'});
@@ -543,12 +569,11 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         });
-
-        loadButton.addEventListener('click', () => {
+        document.getElementById('load-button').addEventListener('click', () => {
+            const fileInput = document.getElementById('file-input');
             fileInput.click();
         });
-
-        fileInput.addEventListener('change', (event) => {
+        document.getElementById('file-input').addEventListener('change', (event) => {
             const file = event.target.files[0];
             if (!file) return;
 
