@@ -54,6 +54,9 @@
             position: relative;
             cursor: pointer;
             flex-shrink: 0;
+            /* Added margin for spacing between checkboxes */
+            margin-left: 0.125rem; 
+            margin-right: 0.125rem;
         }
         .checkbox:checked {
             background-color: #6366f1;
@@ -127,7 +130,8 @@
 
         <!-- Control Buttons -->
         <div class="flex flex-wrap justify-center gap-4 my-6">
-            <button id="import-data-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg shadow-md title-font">Import Data</button>
+            <!-- Changed button color to red -->
+            <button id="import-data-btn" class="bg-red-800 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow-md title-font">Import Data</button>
             <button id="save-button" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-lg shadow-md title-font">Save Progress</button>
             <button id="load-button" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg shadow-md title-font">Load Progress</button>
             <input type="file" id="file-input" class="hidden" accept=".json">
@@ -153,10 +157,61 @@
             <textarea id="json-input" class="w-full h-64 bg-gray-800 border border-gray-600 rounded-md p-2 text-gray-300" placeholder="Paste your JSON data here..."></textarea>
             <div class="flex justify-end space-x-4 mt-4">
                 <button id="modal-cancel" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">Cancel</button>
-                <button id="modal-import" class="bg-red-800 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Import</button>
+                <button id="modal-import" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">Import</button>
             </div>
         </div>
     </div>
+    
+    <!-- HTML Templates for Dynamic Content -->
+    <template id="npc-template">
+        <div>
+            <h4 class="mt-4 font-bold"></h4>
+            <ul class="stat-list">
+                <li><strong>Position and Affiliation:</strong> <span class="affiliation"></span></li>
+                <li><strong>Appearance:</strong> <span class="appearance"></span></li>
+                <li><strong>Demeanor:</strong> <span class="demeanor"></span></li>
+            </ul>
+        </div>
+    </template>
+
+    <template id="clue-template">
+         <li class="flex items-start">
+            <input type="checkbox" class="checkbox mr-3 mt-1">
+            <div class="flex-1">
+                <h4 class="font-bold"></h4>
+                <strong>Source:</strong> <span class="source"></span><br>
+                <strong>Method:</strong> <span class="method"></span><br>
+                <span class="skill-wrapper"><strong>Skill:</strong> <span class="skill"></span><br></span>
+                <strong>Clue:</strong> <span class="clue-text"></span>
+            </div>
+        </li>
+    </template>
+
+    <template id="emergent-clue-template">
+        <li class="flex items-start emergent-clue-item">
+            <input type="checkbox" class="checkbox mr-3 mt-1">
+            <div contenteditable="true" class="editable-clue"></div>
+        </li>
+    </template>
+
+    <template id="threat-profile-template">
+        <div class="threat-profile-box rounded-lg p-4">
+            <h4 class="font-bold text-center"></h4>
+            <ul class="stat-list mt-2">
+                 <li class="mt-2 flex justify-center items-center flex-wrap gap-x-2"><strong>Wounds:</strong> <span class="wounds-container"></span></li>
+                 <li class="mt-1 flex justify-center items-center flex-wrap gap-x-2"><strong>Shock:</strong> <span class="shock-container"></span></li>
+                 <li class="mt-2">
+                    <div class="grid grid-cols-4 sm:grid-cols-7 gap-px text-center my-2 attributes-container"></div>
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-px text-center my-2 defence-container"></div>
+                 </li>
+                <li class="mt-2 text-left"><strong>Skills:</strong> <span class="skills"></span></li>
+                <li class="mt-2"><strong>Weapons:</strong> <ul class="stat-list mt-1 pl-4 weapons-container"></ul></li>
+                <li class="mt-2 abilities-wrapper"><strong>Abilities:</strong><ul class="stat-list mt-1 pl-4 abilities-container"></ul></li>
+                <li class="mt-2"><strong>Wargear:</strong> <span class="wargear"></span></li>
+            </ul>
+        </div>
+    </template>
+
 
     <script>
     document.addEventListener('DOMContentLoaded', () => {
@@ -169,6 +224,7 @@
         window.campaignData = {};
         let emergentClueCounter = 0;
 
+        // --- MODAL AND CORE STATE FUNCTIONS ---
         function showModal() {
             modalTitle.textContent = 'Paste Campaign Data (JSON)';
             modal.classList.remove('hidden');
@@ -179,90 +235,156 @@
             jsonInput.value = '';
         }
         
-        function updateProgressTab() {
-            const progressContent = document.getElementById('progress-content');
-            if (!progressContent) return;
-
-            progressContent.innerHTML = ''; 
-            const allSetpieces = Object.values(window.campaignData).filter(item => item.type === 'setpiece');
-
-            allSetpieces.forEach(setpiece => {
-                const neutralizedThreats = [];
-                if (setpiece.threat_profiles) {
-                    setpiece.threat_profiles.forEach(profile => {
-                        const woundCheckboxes = document.querySelectorAll(`input[id^="${profile.id}-w-"]`);
-                        const allWoundsChecked = woundCheckboxes.length > 0 && Array.from(woundCheckboxes).every(box => box.checked);
-                        if (allWoundsChecked) {
-                            neutralizedThreats.push(profile.name);
-                        }
-                    });
-                }
-
-                const foundClues = [];
-                if (setpiece.clues) {
-                    setpiece.clues.forEach((clue, index) => {
-                        const checkbox = document.getElementById(`clue-${setpiece.id}-${index}`);
-                        if (checkbox && checkbox.checked) {
-                            foundClues.push(`<li><strong>${clue.title}:</strong> ${clue.clue}</li>`);
-                        }
-                    });
-                }
-                
-                const emergentNotes = [];
-                document.querySelectorAll(`#${setpiece.id} .emergent-clue-item`).forEach(item => {
-                    const checkbox = item.querySelector('.checkbox');
-                    const contentDiv = item.querySelector('.editable-clue');
-                     if (checkbox && contentDiv && checkbox.checked && contentDiv.innerHTML.trim() !== '' && contentDiv.innerHTML.trim().toLowerCase() !== '<br>') {
-                        emergentNotes.push(`<li><strong>Note:</strong> ${contentDiv.innerHTML}</li>`);
-                    }
-                });
-                
-                const allFindings = [];
-                if (neutralizedThreats.length > 0) {
-                     allFindings.push(`<li><strong>Threats Neutralized:</strong> ${neutralizedThreats.join(', ')}</li>`);
-                }
-                allFindings.push(...foundClues, ...emergentNotes);
-
-                if (allFindings.length > 0) {
-                    const locationHeader = document.createElement('h4');
-                    locationHeader.className = 'font-bold text-lg text-white mt-4';
-                    locationHeader.textContent = setpiece.title;
-                    
-                    const list = document.createElement('ul');
-                    list.className = 'list-disc pl-5 space-y-2';
-                    list.innerHTML = allFindings.join('');
-                    
-                    progressContent.appendChild(locationHeader);
-                    progressContent.appendChild(list);
-                }
-            });
+        function switchTab(tabId) {
+            deactivateAllTabs();
+            const button = document.querySelector(`[data-tab="${tabId}"]`);
+            if (button) button.classList.add('active');
+            const content = document.getElementById(tabId);
+            if (content) content.classList.add('active');
         }
         
-        function addEmergentClue(setpieceId, checkIdToUse, contentIdToUse) {
+        function deactivateAllTabs() {
+            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        }
+
+        // --- DATA MANAGEMENT FUNCTIONS ---
+        function collectData() {
+            const data = {
+                campaign_data: Object.values(window.campaignData),
+                progress: {}
+            };
+            
+            const checkboxes = document.querySelectorAll('.checkbox');
+            const editableFields = document.querySelectorAll('[contenteditable="true"]');
+            checkboxes.forEach(box => { data.progress[box.id] = box.checked; });
+            editableFields.forEach(field => { data.progress[field.id] = field.innerHTML; });
+
+            return data;
+        }
+
+        function applyData(data) {
+            tabNav.innerHTML = '';
+            tabContentContainer.innerHTML = '';
+            window.campaignData = {};
+
+            if (data.campaign_data && Array.isArray(data.campaign_data)) {
+                const overviewData = data.campaign_data.find(item => item.type === 'overview');
+                if (overviewData) {
+                    window.campaignData[overviewData.id] = overviewData;
+                    createOverviewTab(overviewData);
+                }
+
+                data.campaign_data.forEach((item) => {
+                    if (item.type === 'setpiece') {
+                         window.campaignData[item.id] = item;
+                         createSetpieceTab(item);
+                    }
+                });
+            }
+            
+            if (data.progress) {
+                 Object.keys(data.progress).forEach(id => {
+                     if(id.startsWith('emergent-clue-content-')){
+                        const content = data.progress[id];
+                        if (content && content.trim() !== '' && content.trim().toLowerCase() !== '<br>') {
+                            const checkId = id.replace('content','check');
+                            const parts = id.split('-');
+                            const setpieceId = parts.slice(3, -1).join('-');
+                            if(window.campaignData[setpieceId]){
+                                addEmergentClue(setpieceId, {checkId, contentId: id});
+                            }
+                        }
+                    }
+                });
+
+                for (const id in data.progress) {
+                    const element = document.getElementById(id);
+                    if (!element) continue;
+
+                    if (element.type === 'checkbox') {
+                        element.checked = data.progress[id];
+                    } else if (element.hasAttribute('contenteditable')) {
+                        element.innerHTML = data.progress[id];
+                    }
+                }
+            }
+            
+            setTimeout(() => {
+                updateProgressTab();
+                if (tabNav.firstChild) {
+                    switchTab(tabNav.firstChild.dataset.tab);
+                }
+            }, 0);
+        }
+
+        // --- DYNAMIC ELEMENT CREATION HELPERS ---
+        function createCheckboxGroup(container, baseId, count, isDamage = false) {
+            for(let i = 0; i < count; i++) {
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `${baseId}-${i+1}`;
+                checkbox.className = 'checkbox';
+                if (isDamage) checkbox.classList.add('damage');
+                container.appendChild(checkbox);
+            }
+        }
+
+        function createStatBox(container, label, value) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'stat-value-box p-1';
+            wrapper.innerHTML = `<div class="text-sm text-gray-400">${label}</div><div class="text-gray-200">${value}</div>`;
+            container.appendChild(wrapper);
+        }
+        
+        function addEmergentClue(setpieceId, existingIds = null) {
             const clueList = document.querySelector(`#${setpieceId} .clue-list`);
             if (!clueList) return;
             const addButtonWrapper = clueList.querySelector('.add-clue-btn-wrapper');
-            const li = document.createElement('li');
-            li.className = 'flex items-start emergent-clue-item';
             
-            let checkId, contentId;
-            if (checkIdToUse && contentIdToUse) {
-                checkId = checkIdToUse;
-                contentId = contentIdToUse;
+            const template = document.getElementById('emergent-clue-template');
+            const clone = template.content.cloneNode(true);
+            const li = clone.querySelector('li');
+            const checkbox = clone.querySelector('.checkbox');
+            const contentDiv = clone.querySelector('.editable-clue');
+
+            if (existingIds) {
+                checkbox.id = existingIds.checkId;
+                contentDiv.id = existingIds.contentId;
             } else {
                 emergentClueCounter++;
-                checkId = `emergent-clue-check-${setpieceId}-${emergentClueCounter}`;
-                contentId = `emergent-clue-content-${setpieceId}-${emergentClueCounter}`;
+                checkbox.id = `emergent-clue-check-${setpieceId}-${emergentClueCounter}`;
+                contentDiv.id = `emergent-clue-content-${setpieceId}-${emergentClueCounter}`;
             }
-
-            li.innerHTML = `
-                <input type="checkbox" id="${checkId}" class="checkbox mr-3 mt-1">
-                <div contenteditable="true" id="${contentId}" class="editable-clue"></div>
-            `;
             
             clueList.insertBefore(li, addButtonWrapper);
         }
         
+        // --- NEW: Function to handle backfilling of damage checkboxes ---
+        function handleDamageCheckboxChange(event) {
+            const checkbox = event.target;
+            // Ensure we only act on damage checkboxes
+            if (!checkbox.classList.contains('damage')) return;
+
+            const container = checkbox.parentElement;
+            const checkboxes = Array.from(container.querySelectorAll('.checkbox.damage'));
+            const clickedIndex = checkboxes.indexOf(checkbox);
+
+            if (checkbox.checked) {
+                // If a box is checked, check all boxes to its left (including itself)
+                for (let i = 0; i <= clickedIndex; i++) {
+                    checkboxes[i].checked = true;
+                }
+            } else {
+                // If a box is unchecked, uncheck all boxes to its right (including itself)
+                for (let i = clickedIndex; i < checkboxes.length; i++) {
+                    checkboxes[i].checked = false;
+                }
+            }
+        }
+
+
+        // --- TAB CONTENT BUILDER FUNCTIONS ---
         function createTabButton(id, title, isActive = false) {
             const button = document.createElement('button');
             button.className = `tab-button py-4 px-1 text-base font-bold ${isActive ? 'active' : ''}`;
@@ -327,94 +449,35 @@
             const tabButton = createTabButton(data.id, data.title, true);
             const tabContent = createTabContent(data.id, true);
             
-            const descriptionHTML = `
+            // --- Build Tab Content Using Refactored Functions ---
+            tabContent.innerHTML = `
                 <h3 class="text-xl font-bold mt-4 title-font">Location Dossier</h3>
                 <div class="my-4 space-y-2">
                     <h4 class="font-bold">${data.title}</h4>
                     <p><strong>Physical Description:</strong> ${data.physical_description}</p>
                     <p><strong>Purpose:</strong> ${data.purpose}</p>
                 </div>
-            `;
-            const dramatisPersonaeHTML = `
                 <hr>
                 <h3 class="text-xl font-bold mt-8 title-font">Dramatis Personae</h3>
-                <div class="mb-6">
-                    ${data.dramatis_personae.map(npc => `
-                        <h4 class="mt-4 font-bold">${npc.name}</h4>
-                        <ul class="stat-list">
-                            <li><strong>Position and Affiliation:</strong> ${npc.affiliation}</li>
-                            <li><strong>Appearance:</strong> ${npc.appearance}</li>
-                            <li><strong>Demeanor:</strong> ${npc.demeanor}</li>
-                        </ul>
-                    `).join('')}
-                </div>
-            `;
-            const cluesHTML = `
+                <div class="mb-6" id="dramatis-personae-${data.id}"></div>
                 <hr>
                 <h3 class="text-xl font-bold mt-8 title-font">Findings & Revelations</h3>
                 <div class="mb-6">
-                    <ul class="clue-list space-y-4">
-                        ${data.clues.map((clue, index) => `
-                            <li class="flex items-start">
-                                <input type="checkbox" id="clue-${data.id}-${index}" class="checkbox mr-3 mt-1">
-                                <div class="flex-1">
-                                    <h4 class="font-bold">${clue.title}</h4>
-                                    <strong>Source:</strong> ${clue.source}<br>
-                                    <strong>Method:</strong> ${clue.method}<br>
-                                    ${clue.skill ? `<strong>Skill:</strong> ${clue.skill}<br>` : ''}
-                                    <strong>Clue:</strong> ${clue.clue}
-                                </div>
-                            </li>
-                        `).join('')}
-                    </ul>
-                    <div class="add-clue-btn-wrapper flex justify-center mt-4">
+                    <ul class="clue-list space-y-4" id="clues-${data.id}"></ul>
+                     <div class="add-clue-btn-wrapper flex justify-center mt-4">
                         <button class="add-clue-btn bg-gray-600 hover:bg-gray-700 text-white font-bold h-10 w-10 flex items-center justify-center rounded-full text-2xl" data-setpiece-id="${data.id}">+</button>
                     </div>
                 </div>
-            `;
-            const statblocksHTML = `
                 <hr>
                 <h3 class="text-xl font-bold mt-8 mb-6 title-font">Threat Profiles</h3>
-                <div class="mb-6 space-y-6">
-                ${data.threat_profiles.map((profile) => `
-                    <div class="threat-profile-box rounded-lg p-4">
-                        <h4 class="font-bold text-center">${profile.name} - Tier ${profile.tier}</h4>
-                        <ul class="stat-list mt-2">
-                             <li class="mt-2 flex justify-center items-center flex-wrap gap-x-2"><strong>Wounds:</strong> ${Array.from({length: profile.defence.wounds}, (_, i) => `<input type="checkbox" id="${profile.id}-w-${i+1}" class="checkbox damage">`).join('')}</li>
-                            <li class="mt-1 flex justify-center items-center flex-wrap gap-x-2"><strong>Shock:</strong> ${Array.from({length: profile.defence.shock}, (_, i) => `<input type="checkbox" id="${profile.id}-s-${i+1}" class="checkbox damage">`).join('')}</li>
-                            <li class="mt-2">
-                                <div class="grid grid-cols-4 sm:grid-cols-7 gap-px text-center my-2">
-                                    <div class="stat-value-box p-1"><div class="text-sm text-gray-400">STR</div><div class="text-gray-200">${profile.attributes.str}</div></div>
-                                    <div class="stat-value-box p-1"><div class="text-sm text-gray-400">TOU</div><div class="text-gray-200">${profile.attributes.tou}</div></div>
-                                    <div class="stat-value-box p-1"><div class="text-sm text-gray-400">AGI</div><div class="text-gray-200">${profile.attributes.agi}</div></div>
-                                    <div class="stat-value-box p-1"><div class="text-sm text-gray-400">INI</div><div class="text-gray-200">${profile.attributes.ini}</div></div>
-                                    <div class="stat-value-box p-1"><div class="text-sm text-gray-400">WIL</div><div class="text-gray-200">${profile.attributes.wil}</div></div>
-                                    <div class="stat-value-box p-1"><div class="text-sm text-gray-400">INT</div><div class="text-gray-200">${profile.attributes.int}</div></div>
-                                    <div class="stat-value-box p-1"><div class="text-sm text-gray-400">FEL</div><div class="text-gray-200">${profile.attributes.fel}</div></div>
-                                </div>
-                                <div class="grid grid-cols-2 sm:grid-cols-4 gap-px text-center my-2">
-                                    <div class="stat-value-box p-1"><div class="text-sm text-gray-400">Defence</div><div class="text-gray-200">${profile.defence.def}</div></div>
-                                    <div class="stat-value-box p-1"><div class="text-sm text-gray-400">Resilience</div><div class="text-gray-200">${profile.defence.res}</div></div>
-                                    <div class="stat-value-box p-1"><div class="text-sm text-gray-400">Wounds</div><div class="text-gray-200">${profile.defence.wounds}</div></div>
-                                    <div class="stat-value-box p-1"><div class="text-sm text-gray-400">Shock</div><div class="text-gray-200">${profile.defence.shock}</div></div>
-                                </div>
-                            </li>
-                            <li class="mt-2 text-left"><strong>Skills:</strong> ${profile.skills}</li>
-                            <li class="mt-2"><strong>Weapons:</strong>
-                                <ul class="stat-list mt-1 pl-4">
-                                ${profile.weapons.map(w => `<li><strong>${w.name}:</strong> ${w.stats}</li>`).join('')}
-                                </ul>
-                            </li>
-                            ${profile.abilities ? `<li class="mt-2"><strong>Abilities:</strong><ul class="stat-list mt-1 pl-4">${profile.abilities.map(a => `<li>${a}</li>`).join('')}</ul></li>` : ''}
-                             <li class="mt-2"><strong>Wargear:</strong> ${profile.wargear}</li>
-                        </ul>
-                    </div>
-                `).join('')}
-                </div>
+                <div class="mb-6 space-y-6" id="threats-${data.id}"></div>
             `;
             
-            tabContent.innerHTML = descriptionHTML + dramatisPersonaeHTML + cluesHTML + statblocksHTML;
+            populateNpcs(data.dramatis_personae, tabContent.querySelector(`#dramatis-personae-${data.id}`));
+            populateClues(data.clues, tabContent.querySelector(`#clues-${data.id}`), data.id);
+            populateThreats(data.threat_profiles, tabContent.querySelector(`#threats-${data.id}`));
 
+            // --- Insert Tab into Correct Position ---
             deactivateAllTabs();
             if(originalIndex !== -1 && tabNav.children[originalIndex]){
                 tabNav.insertBefore(tabButton, tabNav.children[originalIndex]);
@@ -425,86 +488,150 @@
             }
         }
 
-        function switchTab(tabId) {
-            deactivateAllTabs();
-            const button = document.querySelector(`[data-tab="${tabId}"]`);
-            if (button) button.classList.add('active');
-            const content = document.getElementById(tabId);
-            if (content) content.classList.add('active');
-        }
-        
-        function deactivateAllTabs() {
-            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        }
-
-        function collectData() {
-            const data = {
-                campaign_data: Object.values(window.campaignData),
-                progress: {}
-            };
-            
-            const checkboxes = document.querySelectorAll('.checkbox');
-            const editableFields = document.querySelectorAll('[contenteditable="true"]');
-            checkboxes.forEach(box => { data.progress[box.id] = box.checked; });
-            editableFields.forEach(field => { data.progress[field.id] = field.innerHTML; });
-
-            return data;
+        // --- NEW: Functions to populate content using templates ---
+        function populateNpcs(npcs, container) {
+            const template = document.getElementById('npc-template');
+            npcs.forEach(npc => {
+                const clone = template.content.cloneNode(true);
+                clone.querySelector('h4').textContent = npc.name;
+                clone.querySelector('.affiliation').textContent = npc.affiliation;
+                clone.querySelector('.appearance').textContent = npc.appearance;
+                clone.querySelector('.demeanor').textContent = npc.demeanor;
+                container.appendChild(clone);
+            });
         }
 
-        function applyData(data) {
-            tabNav.innerHTML = '';
-            tabContentContainer.innerHTML = '';
-            window.campaignData = {};
+        function populateClues(clues, container, setpieceId) {
+            const template = document.getElementById('clue-template');
+            clues.forEach((clue, index) => {
+                const clone = template.content.cloneNode(true);
+                clone.querySelector('input').id = `clue-${setpieceId}-${index}`;
+                clone.querySelector('h4').textContent = clue.title;
+                clone.querySelector('.source').textContent = clue.source;
+                clone.querySelector('.method').textContent = clue.method;
+                clone.querySelector('.clue-text').innerHTML = clue.clue;
+                if (clue.skill) {
+                    clone.querySelector('.skill').textContent = clue.skill;
+                } else {
+                    clone.querySelector('.skill-wrapper').style.display = 'none';
+                }
+                container.appendChild(clone);
+            });
+        }
 
-            if (data.campaign_data && Array.isArray(data.campaign_data)) {
-                const overviewData = data.campaign_data.find(item => item.type === 'overview');
-                if (overviewData) {
-                    window.campaignData[overviewData.id] = overviewData;
-                    createOverviewTab(overviewData);
+        function populateThreats(profiles, container) {
+            const template = document.getElementById('threat-profile-template');
+            profiles.forEach(profile => {
+                const clone = template.content.cloneNode(true);
+                clone.querySelector('h4').textContent = `${profile.name} - Tier ${profile.tier}`;
+                
+                // Populate Checkboxes
+                const woundsContainer = clone.querySelector('.wounds-container');
+                const shockContainer = clone.querySelector('.shock-container');
+                createCheckboxGroup(woundsContainer, `${profile.id}-w`, profile.defence.wounds, true);
+                createCheckboxGroup(shockContainer, `${profile.id}-s`, profile.defence.shock, true);
+                
+                // Populate Stat Boxes
+                const attributesContainer = clone.querySelector('.attributes-container');
+                const defenceContainer = clone.querySelector('.defence-container');
+                createStatBox(attributesContainer, 'STR', profile.attributes.str);
+                createStatBox(attributesContainer, 'TOU', profile.attributes.tou);
+                createStatBox(attributesContainer, 'AGI', profile.attributes.agi);
+                createStatBox(attributesContainer, 'INI', profile.attributes.ini);
+                createStatBox(attributesContainer, 'WIL', profile.attributes.wil);
+                createStatBox(attributesContainer, 'INT', profile.attributes.int);
+                createStatBox(attributesContainer, 'FEL', profile.attributes.fel);
+                
+                createStatBox(defenceContainer, 'Defence', profile.defence.def);
+                createStatBox(defenceContainer, 'Resilience', profile.defence.res);
+                createStatBox(defenceContainer, 'Wounds', profile.defence.wounds);
+                createStatBox(defenceContainer, 'Shock', profile.defence.shock);
+                
+                // Populate Text Fields
+                clone.querySelector('.skills').textContent = profile.skills;
+                clone.querySelector('.wargear').textContent = profile.wargear;
+
+                const weaponsContainer = clone.querySelector('.weapons-container');
+                profile.weapons.forEach(w => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<strong>${w.name}:</strong> ${w.stats}`;
+                    weaponsContainer.appendChild(li);
+                });
+
+                const abilitiesWrapper = clone.querySelector('.abilities-wrapper');
+                if (profile.abilities && profile.abilities.length > 0) {
+                    const abilitiesContainer = clone.querySelector('.abilities-container');
+                    profile.abilities.forEach(a => {
+                        const li = document.createElement('li');
+                        li.innerHTML = a;
+                        abilitiesContainer.appendChild(li);
+                    });
+                } else {
+                    abilitiesWrapper.style.display = 'none';
                 }
 
-                data.campaign_data.forEach((item) => {
-                    if (item.type === 'setpiece') {
-                         window.campaignData[item.id] = item;
-                         createSetpieceTab(item);
-                    }
-                });
-            }
-            
-            if (data.progress) {
-                Object.keys(data.progress).forEach(id => {
-                     if(id.startsWith('emergent-clue-content-')){
-                        const content = data.progress[id];
-                        if (content && content.trim() !== '' && content.trim().toLowerCase() !== '<br>') {
-                            const checkId = id.replace('content','check');
-                            const parts = id.split('-');
-                            const setpieceId = parts.slice(3, -1).join('-');
-                            if(window.campaignData[setpieceId]){
-                                addEmergentClue(setpieceId, checkId, id);
-                            }
+                container.appendChild(clone);
+            });
+        }
+
+        // --- Progress Update Function ---
+        function updateProgressTab() {
+            const progressContent = document.getElementById('progress-content');
+            if (!progressContent) return;
+
+            progressContent.innerHTML = ''; 
+            const allSetpieces = Object.values(window.campaignData).filter(item => item.type === 'setpiece');
+
+            allSetpieces.forEach(setpiece => {
+                const neutralizedThreats = [];
+                if (setpiece.threat_profiles) {
+                    setpiece.threat_profiles.forEach(profile => {
+                        const woundCheckboxes = document.querySelectorAll(`input[id^="${profile.id}-w-"]`);
+                        const allWoundsChecked = woundCheckboxes.length > 0 && Array.from(woundCheckboxes).every(box => box.checked);
+                        if (allWoundsChecked) {
+                            neutralizedThreats.push(profile.name);
                         }
+                    });
+                }
+
+                const foundClues = [];
+                if (setpiece.clues) {
+                    setpiece.clues.forEach((clue, index) => {
+                        const checkbox = document.getElementById(`clue-${setpiece.id}-${index}`);
+                        if (checkbox && checkbox.checked) {
+                            foundClues.push(`<li><strong>${clue.title}:</strong> ${clue.clue}</li>`);
+                        }
+                    });
+                }
+                
+                const emergentNotes = [];
+                document.querySelectorAll(`#${setpiece.id} .emergent-clue-item`).forEach(item => {
+                    const checkbox = item.querySelector('.checkbox');
+                    const contentDiv = item.querySelector('.editable-clue');
+                     if (checkbox && contentDiv && checkbox.checked && contentDiv.innerHTML.trim() !== '' && contentDiv.innerHTML.toLowerCase() !== '<br>') {
+                        emergentNotes.push(`<li><strong>Note:</strong> ${contentDiv.innerHTML}</li>`);
                     }
                 });
-
-                for (const id in data.progress) {
-                    const element = document.getElementById(id);
-                    if (!element) continue;
-
-                    if (element.type === 'checkbox') {
-                        element.checked = data.progress[id];
-                    } else if (element.hasAttribute('contenteditable')) {
-                        element.innerHTML = data.progress[id];
-                    }
+                
+                const allFindings = [];
+                if (neutralizedThreats.length > 0) {
+                     allFindings.push(`<li><strong>Threats Neutralized:</strong> ${neutralizedThreats.join(', ')}</li>`);
                 }
-            }
-            
-            setTimeout(() => {
-                updateProgressTab();
-                if (tabNav.firstChild) {
-                    switchTab(tabNav.firstChild.dataset.tab);
+                allFindings.push(...foundClues, ...emergentNotes);
+
+                if (allFindings.length > 0) {
+                    const locationHeader = document.createElement('h4');
+                    locationHeader.className = 'font-bold text-lg text-white mt-4';
+                    locationHeader.textContent = setpiece.title;
+                    
+                    const list = document.createElement('ul');
+                    list.className = 'list-disc pl-5 space-y-2';
+                    list.innerHTML = allFindings.join('');
+                    
+                    progressContent.appendChild(locationHeader);
+                    progressContent.appendChild(list);
                 }
-            }, 0);
+            });
         }
         
         // --- EVENT LISTENERS ---
@@ -518,11 +645,19 @@
             }
         });
         
+        // UPDATED event listener for change events
         document.body.addEventListener('change', function(e){
-            if(e.target && e.target.classList.contains('checkbox')){
+            const target = e.target;
+            if (target && target.classList.contains('checkbox')) {
+                // Handle the backfill logic for damage boxes first
+                if (target.classList.contains('damage')) {
+                    handleDamageCheckboxChange(e);
+                }
+                // Then, update the main progress tab
                 updateProgressTab();
             }
         });
+
         document.body.addEventListener('input', function(e){
              if(e.target && e.target.hasAttribute('contenteditable')){
                 updateProgressTab();
@@ -534,6 +669,7 @@
         document.getElementById('modal-import').addEventListener('click', () => {
             try {
                 const data = JSON.parse(jsonInput.value);
+                // The import button in the modal is for adding NEW setpieces, not loading saves
                 if (data.campaign_data && data.progress) {
                     alert("This appears to be a save file. Please use the 'Load Progress' button instead.");
                     return;
@@ -581,6 +717,11 @@
             reader.onload = (e) => {
                 try {
                     const data = JSON.parse(e.target.result);
+                    // The load button should only accept full save files
+                     if (!data.campaign_data || !data.progress) {
+                        alert("This does not appear to be a valid save file. To add a new setpiece, please use the 'Import Data' button.");
+                        return;
+                    }
                     applyData(data);
                 } catch (error) {
                     console.error('Error parsing JSON file:', error);
